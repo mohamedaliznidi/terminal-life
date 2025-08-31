@@ -1,17 +1,15 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Slider } from '@/components/ui/slider'
 import { CustomSlider } from '@/components/ui/custom-slider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Play, Pause, SkipForward, RotateCcw, Square, Save, Upload, Download, Trash2, Share2 } from 'lucide-react'
+import { useGameOfLife } from '@/hooks/useGameOfLife'
+import { OptimizedGameGrid } from '@/components/GameGrid'
 
-interface Cell {
-  alive: boolean
-  age?: number
-}
+
 
 interface Pattern {
   name: string
@@ -21,17 +19,11 @@ interface Pattern {
   height: number
 }
 
-interface GameState {
-  grid: boolean[][]
-  generation: number
-  isPlaying: boolean
-  speed: number
-  patternName: string
-}
+
 
 const GRID_WIDTH = 40
 const GRID_HEIGHT = 25
-const CELL_SIZE = 20
+
 
 const FAMOUS_PATTERNS: Pattern[] = [
   {
@@ -232,9 +224,9 @@ const FAMOUS_PATTERNS: Pattern[] = [
 ]
 
 const COLOR_SCHEMES = {
-  classic: { 
-    alive: '#00ff00', 
-    dead: '#000000', 
+  classic: {
+    alive: '#00ff00',
+    dead: '#000000',
     bg: '#000000',
     cardBg: '#000000',
     text: '#00ff00',
@@ -243,9 +235,9 @@ const COLOR_SCHEMES = {
     buttonText: '#00ff00',
     buttonHover: '#003300'
   },
-  amber: { 
-    alive: '#ffb000', 
-    dead: '#2b1b0c', 
+  amber: {
+    alive: '#ffb000',
+    dead: '#2b1b0c',
     bg: '#2b1b0c',
     cardBg: '#2b1b0c',
     text: '#ffb000',
@@ -254,9 +246,9 @@ const COLOR_SCHEMES = {
     buttonText: '#ffb000',
     buttonHover: '#4d300d'
   },
-  blue: { 
-    alive: '#00ffff', 
-    dead: '#001a33', 
+  blue: {
+    alive: '#00ffff',
+    dead: '#001a33',
     bg: '#001a33',
     cardBg: '#001a33',
     text: '#00ffff',
@@ -265,9 +257,9 @@ const COLOR_SCHEMES = {
     buttonText: '#00ffff',
     buttonHover: '#003366'
   },
-  matrix: { 
-    alive: '#00ff41', 
-    dead: '#0d1f0d', 
+  matrix: {
+    alive: '#00ff41',
+    dead: '#0d1f0d',
     bg: '#0d1f0d',
     cardBg: '#0d1f0d',
     text: '#00ff41',
@@ -276,9 +268,9 @@ const COLOR_SCHEMES = {
     buttonText: '#00ff41',
     buttonHover: '#1a3d1a'
   },
-  monochrome: { 
-    alive: '#ffffff', 
-    dead: '#000000', 
+  monochrome: {
+    alive: '#ffffff',
+    dead: '#000000',
     bg: '#000000',
     cardBg: '#000000',
     text: '#ffffff',
@@ -296,14 +288,20 @@ const CHARACTER_SETS = {
 }
 
 export default function TerminalLife() {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [gameState, setGameState] = useState<GameState>({
-    grid: Array(GRID_HEIGHT).fill(null).map(() => Array(GRID_WIDTH).fill(false)),
-    generation: 0,
-    isPlaying: false,
-    speed: 5,
-    patternName: "Custom"
-  })
+  // Use the optimized game logic hook
+  const {
+    gameState,
+    loadPattern,
+    toggleCell,
+    handlePlayPause,
+    handleStep,
+    handleReset,
+    handleClear,
+    setSpeed,
+    setPatternName,
+    nextGeneration
+  } = useGameOfLife()
+
   const [colorScheme, setColorScheme] = useState<keyof typeof COLOR_SCHEMES>('classic')
   const [characterSet, setCharacterSet] = useState<keyof typeof CHARACTER_SETS>('blocks')
   const [savedPatterns, setSavedPatterns] = useState<Pattern[]>([])
@@ -311,160 +309,27 @@ export default function TerminalLife() {
   const [savePatternName, setSavePatternName] = useState('')
   const [importExportText, setImportExportText] = useState('')
 
-  // Initialize empty grid
-  const createEmptyGrid = useCallback(() => {
-    return Array(GRID_HEIGHT).fill(null).map(() => Array(GRID_WIDTH).fill(false))
-  }, [])
+  // Memoized color schemes for performance
+  const gridColors = useMemo(() => ({
+    alive: COLOR_SCHEMES[colorScheme].alive,
+    dead: COLOR_SCHEMES[colorScheme].dead,
+    bg: COLOR_SCHEMES[colorScheme].bg
+  }), [colorScheme])
 
-  // Calculate next generation
-  const calculateNextGeneration = useCallback((grid: boolean[][]) => {
-    const newGrid = createEmptyGrid()
-    
-    for (let y = 0; y < GRID_HEIGHT; y++) {
-      for (let x = 0; x < GRID_WIDTH; x++) {
-        const neighbors = countNeighbors(grid, x, y)
-        const isAlive = grid[y][x]
-        
-        // Conway's Game of Life rules
-        if (isAlive && (neighbors === 2 || neighbors === 3)) {
-          newGrid[y][x] = true // Survival
-        } else if (!isAlive && neighbors === 3) {
-          newGrid[y][x] = true // Birth
-        }
-        // Death by underpopulation or overpopulation (cell becomes false)
-      }
-    }
-    
-    return newGrid
-  }, [createEmptyGrid])
+  const gridCharacters = useMemo(() => CHARACTER_SETS[characterSet], [characterSet])
 
-  // Count neighbors for a cell
-  const countNeighbors = useCallback((grid: boolean[][], x: number, y: number) => {
-    let count = 0
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        if (dx === 0 && dy === 0) continue
-        
-        const nx = (x + dx + GRID_WIDTH) % GRID_WIDTH
-        const ny = (y + dy + GRID_HEIGHT) % GRID_HEIGHT
-        
-        if (grid[ny][nx]) count++
-      }
-    }
-    return count
-  }, [])
-
-  // Load pattern
-  const loadPattern = useCallback((pattern: Pattern) => {
-    const newGrid = createEmptyGrid()
-    const startX = Math.floor((GRID_WIDTH - pattern.width) / 2)
-    const startY = Math.floor((GRID_HEIGHT - pattern.height) / 2)
-    
-    for (let y = 0; y < pattern.height; y++) {
-      for (let x = 0; x < pattern.width; x++) {
-        if (startY + y < GRID_HEIGHT && startX + x < GRID_WIDTH) {
-          newGrid[startY + y][startX + x] = pattern.grid[y][x]
-        }
-      }
-    }
-    
-    setGameState(prev => ({
-      ...prev,
-      grid: newGrid,
-      generation: 0,
-      patternName: pattern.name
-    }))
-  }, [createEmptyGrid])
-
-  // Toggle cell
-  const toggleCell = useCallback((x: number, y: number) => {
-    setGameState(prev => ({
-      ...prev,
-      grid: prev.grid.map((row, rowY) => 
-        rowY === y ? row.map((cell, colX) => 
-          colX === x ? !cell : cell
-        ) : row
-      ),
-      patternName: "Custom"
-    }))
-  }, [])
-
-  // Game loop
+  // Game loop using the optimized hook
   useEffect(() => {
     if (!gameState.isPlaying) return
-    
+
     const interval = setInterval(() => {
-      setGameState(prev => ({
-        ...prev,
-        grid: calculateNextGeneration(prev.grid),
-        generation: prev.generation + 1
-      }))
+      nextGeneration()
     }, 1000 / gameState.speed)
-    
+
     return () => clearInterval(interval)
-  }, [gameState.isPlaying, gameState.speed, calculateNextGeneration])
+  }, [gameState.isPlaying, gameState.speed, nextGeneration])
 
-  // Render grid
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    
-    const colors = COLOR_SCHEMES[colorScheme]
-    
-    // Clear canvas
-    ctx.fillStyle = colors.bg
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-    
-    // Draw grid
-    ctx.font = `${CELL_SIZE}px monospace`
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    
-    for (let y = 0; y < GRID_HEIGHT; y++) {
-      for (let x = 0; x < GRID_WIDTH; x++) {
-        const isAlive = gameState.grid[y][x]
-        const char = isAlive ? CHARACTER_SETS[characterSet].alive : CHARACTER_SETS[characterSet].dead
-        ctx.fillStyle = isAlive ? colors.alive : colors.dead
-        ctx.fillText(char, x * CELL_SIZE + CELL_SIZE / 2, y * CELL_SIZE + CELL_SIZE / 2)
-      }
-    }
-  }, [gameState.grid, colorScheme, characterSet])
 
-  // Control handlers
-  const handlePlayPause = () => {
-    setGameState(prev => ({ ...prev, isPlaying: !prev.isPlaying }))
-  }
-
-  const handleStep = () => {
-    setGameState(prev => ({
-      ...prev,
-      grid: calculateNextGeneration(prev.grid),
-      generation: prev.generation + 1
-    }))
-  }
-
-  const handleReset = () => {
-    setGameState(prev => ({
-      ...prev,
-      grid: createEmptyGrid(),
-      generation: 0,
-      isPlaying: false,
-      patternName: "Custom"
-    }))
-  }
-
-  const handleClear = () => {
-    setGameState(prev => ({
-      ...prev,
-      grid: createEmptyGrid(),
-      generation: 0,
-      isPlaying: false,
-      patternName: "Custom"
-    }))
-  }
 
   // Load saved patterns from localStorage on component mount
   useEffect(() => {
@@ -487,7 +352,7 @@ export default function TerminalLife() {
   // Save current pattern
   const handleSavePattern = () => {
     if (!savePatternName.trim()) return
-    
+
     const newPattern: Pattern = {
       name: savePatternName.trim(),
       description: `Custom pattern saved at generation ${gameState.generation}`,
@@ -495,11 +360,11 @@ export default function TerminalLife() {
       width: GRID_WIDTH,
       height: GRID_HEIGHT
     }
-    
-    setSavedPatterns(prev => [...prev, newPattern])
+
+    setSavedPatterns((prev: Pattern[]) => [...prev, newPattern])
     setSavePatternName('')
     setShowSaveDialog(false)
-    setGameState(prev => ({ ...prev, patternName: savePatternName.trim() }))
+    setPatternName(savePatternName.trim())
   }
 
   // Load saved pattern
@@ -509,7 +374,7 @@ export default function TerminalLife() {
 
   // Delete saved pattern
   const handleDeleteSavedPattern = (patternName: string) => {
-    setSavedPatterns(prev => prev.filter(p => p.name !== patternName))
+    setSavedPatterns((prev: Pattern[]) => prev.filter((p: Pattern) => p.name !== patternName))
   }
 
   // Export pattern as text
@@ -560,7 +425,7 @@ export default function TerminalLife() {
     }
     const encoded = btoa(JSON.stringify(patternData))
     const url = `${window.location.origin}${window.location.pathname}?pattern=${encodeURIComponent(encoded)}`
-    
+
     navigator.clipboard?.writeText(url).then(() => {
       alert('Pattern URL copied to clipboard!')
     }).catch(() => {
@@ -573,7 +438,7 @@ export default function TerminalLife() {
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search)
     const patternParam = urlParams.get('pattern')
-    
+
     if (patternParam) {
       try {
         const patternData = JSON.parse(atob(decodeURIComponent(patternParam)))
@@ -599,7 +464,7 @@ export default function TerminalLife() {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
         return
       }
-      
+
       switch (e.key.toLowerCase()) {
         case ' ':
           e.preventDefault()
@@ -620,12 +485,12 @@ export default function TerminalLife() {
         case '+':
         case '=':
           e.preventDefault()
-          setGameState(prev => ({ ...prev, speed: Math.min(10, prev.speed + 1) }))
+          setSpeed(Math.min(10, gameState.speed + 1))
           break
         case '-':
         case '_':
           e.preventDefault()
-          setGameState(prev => ({ ...prev, speed: Math.max(1, prev.speed - 1) }))
+          setSpeed(Math.max(1, gameState.speed - 1))
           break
       }
     }
@@ -635,20 +500,20 @@ export default function TerminalLife() {
   }, [handlePlayPause, handleStep, handleReset, handleClear])
 
   return (
-    <div 
+    <div
       className="min-h-screen font-mono p-4 transition-colors duration-300"
-      style={{ 
+      style={{
         backgroundColor: COLOR_SCHEMES[colorScheme].bg,
-        color: COLOR_SCHEMES[colorScheme].text 
+        color: COLOR_SCHEMES[colorScheme].text
       }}
     >
       {/* Header */}
       <div className="text-center mb-6">
-        <h1 
+        <h1
           className="text-4xl md:text-5xl font-bold mb-2 tracking-wider transition-colors duration-300"
           style={{ color: COLOR_SCHEMES[colorScheme].text }}
         >
-          TERMINALLIFE
+          TERMINAL LIFE
         </h1>
         <p className="text-sm md:text-base opacity-75 mb-2 transition-colors duration-300" style={{ color: COLOR_SCHEMES[colorScheme].text }}>Conway's Game of Life Simulator</p>
         <div className="text-xs opacity-50 hidden sm:block transition-colors duration-300" style={{ color: COLOR_SCHEMES[colorScheme].text }}>
@@ -659,41 +524,41 @@ export default function TerminalLife() {
       <div className="max-w-7xl mx-auto grid grid-cols-1 xl:grid-cols-4 gap-6">
         {/* Main Game Area */}
         <div className="xl:col-span-3">
-          <Card 
+          <Card
             className="border-2 transition-colors duration-300"
-            style={{ 
+            style={{
               backgroundColor: COLOR_SCHEMES[colorScheme].cardBg,
-              borderColor: COLOR_SCHEMES[colorScheme].border 
+              borderColor: COLOR_SCHEMES[colorScheme].border
             }}
           >
-            <CardHeader 
+            <CardHeader
               className="border-b transition-colors duration-300"
               style={{ borderColor: COLOR_SCHEMES[colorScheme].border }}
             >
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                <CardTitle 
+                <CardTitle
                   className="text-lg transition-colors duration-300"
                   style={{ color: COLOR_SCHEMES[colorScheme].text }}
                 >
                   Pattern: {gameState.patternName}
                 </CardTitle>
                 <div className="flex flex-wrap gap-2 text-sm" style={{ color: COLOR_SCHEMES[colorScheme].text }}>
-                  <Badge 
-                    variant="outline" 
+                  <Badge
+                    variant="outline"
                     className="transition-colors duration-300"
-                    style={{ 
+                    style={{
                       borderColor: COLOR_SCHEMES[colorScheme].border,
-                      color: COLOR_SCHEMES[colorScheme].text 
+                      color: COLOR_SCHEMES[colorScheme].text
                     }}
                   >
                     Gen: {gameState.generation}
                   </Badge>
-                  <Badge 
-                    variant="outline" 
+                  <Badge
+                    variant="outline"
                     className="transition-colors duration-300"
-                    style={{ 
+                    style={{
                       borderColor: COLOR_SCHEMES[colorScheme].border,
-                      color: COLOR_SCHEMES[colorScheme].text 
+                      color: COLOR_SCHEMES[colorScheme].text
                     }}
                   >
                     {gameState.speed}x
@@ -710,10 +575,10 @@ export default function TerminalLife() {
                     variant="outline"
                     size="sm"
                     className="border-2 transition-colors duration-300 hover:opacity-80"
-                    style={{ 
+                    style={{
                       backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg,
                       borderColor: COLOR_SCHEMES[colorScheme].border,
-                      color: COLOR_SCHEMES[colorScheme].buttonText 
+                      color: COLOR_SCHEMES[colorScheme].buttonText
                     }}
                   >
                     {gameState.isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
@@ -727,10 +592,10 @@ export default function TerminalLife() {
                     size="sm"
                     className="border-2 transition-colors duration-300 hover:opacity-80 disabled:opacity-50"
                     disabled={gameState.isPlaying}
-                    style={{ 
+                    style={{
                       backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg,
                       borderColor: COLOR_SCHEMES[colorScheme].border,
-                      color: COLOR_SCHEMES[colorScheme].buttonText 
+                      color: COLOR_SCHEMES[colorScheme].buttonText
                     }}
                   >
                     <SkipForward className="w-4 h-4" />
@@ -741,10 +606,10 @@ export default function TerminalLife() {
                     variant="outline"
                     size="sm"
                     className="border-2 transition-colors duration-300 hover:opacity-80"
-                    style={{ 
+                    style={{
                       backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg,
                       borderColor: COLOR_SCHEMES[colorScheme].border,
-                      color: COLOR_SCHEMES[colorScheme].buttonText 
+                      color: COLOR_SCHEMES[colorScheme].buttonText
                     }}
                   >
                     <RotateCcw className="w-4 h-4" />
@@ -755,23 +620,23 @@ export default function TerminalLife() {
                     variant="outline"
                     size="sm"
                     className="border-2 transition-colors duration-300 hover:opacity-80"
-                    style={{ 
+                    style={{
                       backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg,
                       borderColor: COLOR_SCHEMES[colorScheme].border,
-                      color: COLOR_SCHEMES[colorScheme].buttonText 
+                      color: COLOR_SCHEMES[colorScheme].buttonText
                     }}
                   >
                     <Square className="w-4 h-4" />
                     <span className="hidden sm:inline ml-1">Clear</span>
                   </Button>
                 </div>
-                
+
                 <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
                   <div className="flex items-center gap-2">
                     <label className="text-sm whitespace-nowrap transition-colors duration-300" style={{ color: COLOR_SCHEMES[colorScheme].text }}>Speed:</label>
                     <CustomSlider
                       value={[gameState.speed]}
-                      onValueChange={(value) => setGameState(prev => ({ ...prev, speed: value[0] }))}
+                      onValueChange={(value) => setSpeed(value[0])}
                       max={10}
                       min={1}
                       step={1}
@@ -788,10 +653,10 @@ export default function TerminalLife() {
                       variant="outline"
                       size="sm"
                       className="border-2 transition-colors duration-300 hover:opacity-80"
-                      style={{ 
+                      style={{
                         backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg,
                         borderColor: COLOR_SCHEMES[colorScheme].border,
-                        color: COLOR_SCHEMES[colorScheme].buttonText 
+                        color: COLOR_SCHEMES[colorScheme].buttonText
                       }}
                     >
                       <Save className="w-4 h-4" />
@@ -802,10 +667,10 @@ export default function TerminalLife() {
                       variant="outline"
                       size="sm"
                       className="border-2 transition-colors duration-300 hover:opacity-80"
-                      style={{ 
+                      style={{
                         backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg,
                         borderColor: COLOR_SCHEMES[colorScheme].border,
-                        color: COLOR_SCHEMES[colorScheme].buttonText 
+                        color: COLOR_SCHEMES[colorScheme].buttonText
                       }}
                     >
                       <Download className="w-4 h-4" />
@@ -816,10 +681,10 @@ export default function TerminalLife() {
                       variant="outline"
                       size="sm"
                       className="border-2 transition-colors duration-300 hover:opacity-80"
-                      style={{ 
+                      style={{
                         backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg,
                         borderColor: COLOR_SCHEMES[colorScheme].border,
-                        color: COLOR_SCHEMES[colorScheme].buttonText 
+                        color: COLOR_SCHEMES[colorScheme].buttonText
                       }}
                     >
                       <Share2 className="w-4 h-4" />
@@ -829,29 +694,19 @@ export default function TerminalLife() {
                 </div>
               </div>
 
-              {/* Canvas Grid */}
-              <div 
+              {/* Optimized Game Grid */}
+              <div
                 className="border rounded p-2 overflow-auto transition-colors duration-300"
-                style={{ 
+                style={{
                   backgroundColor: COLOR_SCHEMES[colorScheme].cardBg,
-                  borderColor: COLOR_SCHEMES[colorScheme].border 
+                  borderColor: COLOR_SCHEMES[colorScheme].border
                 }}
               >
-                <canvas
-                  ref={canvasRef}
-                  width={GRID_WIDTH * CELL_SIZE}
-                  height={GRID_HEIGHT * CELL_SIZE}
-                  className="cursor-pointer mx-auto block"
-                  onClick={(e) => {
-                    const rect = canvasRef.current?.getBoundingClientRect()
-                    if (rect) {
-                      const x = Math.floor((e.clientX - rect.left) / CELL_SIZE)
-                      const y = Math.floor((e.clientY - rect.top) / CELL_SIZE)
-                      if (x >= 0 && x < GRID_WIDTH && y >= 0 && y < GRID_HEIGHT) {
-                        toggleCell(x, y)
-                      }
-                    }
-                  }}
+                <OptimizedGameGrid
+                  grid={gameState.grid}
+                  colorScheme={gridColors}
+                  characterSet={gridCharacters}
+                  onCellClick={toggleCell}
                 />
               </div>
             </CardContent>
@@ -861,127 +716,137 @@ export default function TerminalLife() {
         {/* Side Panel */}
         <div className="xl:col-span-1">
           <Tabs defaultValue="patterns" className="w-full">
-            <TabsList 
+            <TabsList
               className="grid w-full grid-cols-3 border-2 transition-colors duration-300"
-              style={{ 
+              style={{
                 backgroundColor: COLOR_SCHEMES[colorScheme].cardBg,
-                borderColor: COLOR_SCHEMES[colorScheme].border 
+                borderColor: COLOR_SCHEMES[colorScheme].border
               }}
             >
-              <TabsTrigger 
-                value="patterns" 
+              <TabsTrigger
+                value="patterns"
                 className="data-[state=active]:opacity-80 text-xs transition-colors duration-300"
-                style={{ 
+                style={{
                   color: COLOR_SCHEMES[colorScheme].text,
-                  backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg 
+                  backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg
                 }}
               >
                 Famous
               </TabsTrigger>
-              <TabsTrigger 
-                value="saved" 
+              <TabsTrigger
+                value="saved"
                 className="data-[state=active]:opacity-80 text-xs transition-colors duration-300"
-                style={{ 
+                style={{
                   color: COLOR_SCHEMES[colorScheme].text,
-                  backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg 
+                  backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg
                 }}
               >
                 Saved
               </TabsTrigger>
-              <TabsTrigger 
-                value="settings" 
+              <TabsTrigger
+                value="settings"
                 className="data-[state=active]:opacity-80 text-xs transition-colors duration-300"
-                style={{ 
+                style={{
                   color: COLOR_SCHEMES[colorScheme].text,
-                  backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg 
+                  backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg
                 }}
               >
                 Settings
               </TabsTrigger>
             </TabsList>
-            
+
             <TabsContent value="patterns">
-              <Card 
+              <Card
                 className="border-2 transition-colors duration-300"
-                style={{ 
+                style={{
                   backgroundColor: COLOR_SCHEMES[colorScheme].cardBg,
-                  borderColor: COLOR_SCHEMES[colorScheme].border 
+                  borderColor: COLOR_SCHEMES[colorScheme].border
                 }}
               >
                 <CardHeader>
-                  <CardTitle 
+                  <CardTitle
                     className="transition-colors duration-300"
                     style={{ color: COLOR_SCHEMES[colorScheme].text }}
                   >
                     Famous Patterns
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-2 max-h-96 overflow-y-auto">
+                <CardContent className="space-y-2 max-h-96 overflow-y-auto" style={{
+                  // Custom scrollbar styling with theme colors
+                  scrollbarWidth: 'thin',
+                  scrollbarColor: `${COLOR_SCHEMES[colorScheme].border} transparent`
+                }}>
                   {FAMOUS_PATTERNS.map((pattern) => (
                     <Button
-                      key={pattern.name}
-                      onClick={() => loadPattern(pattern)}
+                      onClick={() => handleLoadSavedPattern(pattern)}
                       variant="outline"
-                      className="w-full justify-start border-2 transition-colors duration-300 hover:opacity-80 text-left"
-                      style={{ 
+                      className="flex-1 justify-start border-2 transition-colors duration-300 hover:opacity-80 text-left min-h-fit w-full"
+                      style={{
                         backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg,
                         borderColor: COLOR_SCHEMES[colorScheme].border,
-                        color: COLOR_SCHEMES[colorScheme].buttonText 
+                        color: COLOR_SCHEMES[colorScheme].buttonText
                       }}
                     >
-                      <div>
-                        <div className="font-semibold">{pattern.name}</div>
-                        <div className="text-xs opacity-75" style={{ color: COLOR_SCHEMES[colorScheme].text }}>{pattern.description}</div>
+                      <div className="w-full">
+                        <div className="font-semibold break-words whitespace-normal leading-tight">{pattern.name}</div>
+                        <div className="text-xs opacity-75 break-words whitespace-normal leading-tight mt-1" style={{ color: COLOR_SCHEMES[colorScheme].text }}>{pattern.description}</div>
                       </div>
                     </Button>
                   ))}
                 </CardContent>
               </Card>
             </TabsContent>
-            
+
             <TabsContent value="saved">
-              <Card 
+              <Card
                 className="border-2 transition-colors duration-300"
-                style={{ 
+                style={{
                   backgroundColor: COLOR_SCHEMES[colorScheme].cardBg,
-                  borderColor: COLOR_SCHEMES[colorScheme].border 
+                  borderColor: COLOR_SCHEMES[colorScheme].border
                 }}
               >
                 <CardHeader>
-                  <CardTitle 
+                  <CardTitle
                     className="transition-colors duration-300"
                     style={{ color: COLOR_SCHEMES[colorScheme].text }}
                   >
                     Saved Patterns
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-2 max-h-96 overflow-y-auto">
+                <CardContent
+                  className="space-y-2 max-h-96 overflow-y-auto saved-patterns-scrollbar"
+                  style={{
+                    // Custom scrollbar styling with theme colors
+                    scrollbarWidth: 'thin',
+                    scrollbarColor: `${COLOR_SCHEMES[colorScheme].border} transparent`
+                  }}
+                >
                   {savedPatterns.length === 0 ? (
                     <p className="text-sm opacity-75 text-center py-4 transition-colors duration-300" style={{ color: COLOR_SCHEMES[colorScheme].text }}>No saved patterns yet</p>
                   ) : (
                     savedPatterns.map((pattern) => (
-                      <div key={pattern.name} className="flex gap-2">
+                      <div key={pattern.name} className="flex gap-2 pt-2 first:pt-0">
                         <Button
                           onClick={() => handleLoadSavedPattern(pattern)}
                           variant="outline"
-                          className="flex-1 justify-start border-2 transition-colors duration-300 hover:opacity-80 text-left"
-                          style={{ 
+                          className="flex-1 w-full justify-start border-2 transition-colors duration-300 hover:opacity-80 text-left min-h-fit"
+                          style={{
                             backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg,
                             borderColor: COLOR_SCHEMES[colorScheme].border,
-                            color: COLOR_SCHEMES[colorScheme].buttonText 
+                            color: COLOR_SCHEMES[colorScheme].buttonText
                           }}
                         >
-                          <div>
-                            <div className="font-semibold">{pattern.name}</div>
-                            <div className="text-xs opacity-75" style={{ color: COLOR_SCHEMES[colorScheme].text }}>{pattern.description}</div>
+                          <div className="w-full">
+                            <div className="font-semibold break-words whitespace-normal leading-tight">{pattern.name}</div>
+                            <div className="text-xs opacity-75 break-words whitespace-normal leading-tight mt-1" style={{ color: COLOR_SCHEMES[colorScheme].text }}>{pattern.description}</div>
                           </div>
                         </Button>
                         <Button
                           onClick={() => handleDeleteSavedPattern(pattern.name)}
                           variant="outline"
                           size="sm"
-                          className="border-2 transition-colors duration-300 hover:opacity-80"
-                          style={{ 
+                          className="border-2 transition-colors duration-300 hover:opacity-80 flex-shrink-0"
+                          style={{
                             backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg,
                             borderColor: '#ff4444',
                             color: '#ff4444'
@@ -995,17 +860,17 @@ export default function TerminalLife() {
                 </CardContent>
               </Card>
             </TabsContent>
-            
+
             <TabsContent value="settings">
-              <Card 
+              <Card
                 className="border-2 transition-colors duration-300"
-                style={{ 
+                style={{
                   backgroundColor: COLOR_SCHEMES[colorScheme].cardBg,
-                  borderColor: COLOR_SCHEMES[colorScheme].border 
+                  borderColor: COLOR_SCHEMES[colorScheme].border
                 }}
               >
                 <CardHeader>
-                  <CardTitle 
+                  <CardTitle
                     className="transition-colors duration-300"
                     style={{ color: COLOR_SCHEMES[colorScheme].text }}
                   >
@@ -1016,52 +881,52 @@ export default function TerminalLife() {
                   <div>
                     <label className="text-sm block mb-2 transition-colors duration-300" style={{ color: COLOR_SCHEMES[colorScheme].text }}>Color Scheme</label>
                     <Select value={colorScheme} onValueChange={(value: keyof typeof COLOR_SCHEMES) => setColorScheme(value)}>
-                      <SelectTrigger 
+                      <SelectTrigger
                         className="border-2 transition-colors duration-300"
-                        style={{ 
+                        style={{
                           backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg,
                           borderColor: COLOR_SCHEMES[colorScheme].border,
-                          color: COLOR_SCHEMES[colorScheme].buttonText 
+                          color: COLOR_SCHEMES[colorScheme].buttonText
                         }}
                       >
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent 
+                      <SelectContent
                         className="transition-colors duration-300"
-                        style={{ 
+                        style={{
                           backgroundColor: COLOR_SCHEMES[colorScheme].cardBg,
-                          borderColor: COLOR_SCHEMES[colorScheme].border 
+                          borderColor: COLOR_SCHEMES[colorScheme].border
                         }}
                       >
-                        <SelectItem 
+                        <SelectItem
                           value="classic"
                           className="transition-colors duration-300"
                           style={{ color: COLOR_SCHEMES[colorScheme].text }}
                         >
                           Classic Green
                         </SelectItem>
-                        <SelectItem 
+                        <SelectItem
                           value="amber"
                           className="transition-colors duration-300"
                           style={{ color: COLOR_SCHEMES[colorScheme].text }}
                         >
                           Amber
                         </SelectItem>
-                        <SelectItem 
+                        <SelectItem
                           value="blue"
                           className="transition-colors duration-300"
                           style={{ color: COLOR_SCHEMES[colorScheme].text }}
                         >
                           Blue
                         </SelectItem>
-                        <SelectItem 
+                        <SelectItem
                           value="matrix"
                           className="transition-colors duration-300"
                           style={{ color: COLOR_SCHEMES[colorScheme].text }}
                         >
                           Matrix
                         </SelectItem>
-                        <SelectItem 
+                        <SelectItem
                           value="monochrome"
                           className="transition-colors duration-300"
                           style={{ color: COLOR_SCHEMES[colorScheme].text }}
@@ -1071,42 +936,42 @@ export default function TerminalLife() {
                       </SelectContent>
                     </Select>
                   </div>
-                  
+
                   <div>
                     <label className="text-sm block mb-2 transition-colors duration-300" style={{ color: COLOR_SCHEMES[colorScheme].text }}>Character Set</label>
                     <Select value={characterSet} onValueChange={(value: keyof typeof CHARACTER_SETS) => setCharacterSet(value)}>
-                      <SelectTrigger 
+                      <SelectTrigger
                         className="border-2 transition-colors duration-300"
-                        style={{ 
+                        style={{
                           backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg,
                           borderColor: COLOR_SCHEMES[colorScheme].border,
-                          color: COLOR_SCHEMES[colorScheme].buttonText 
+                          color: COLOR_SCHEMES[colorScheme].buttonText
                         }}
                       >
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent 
+                      <SelectContent
                         className="transition-colors duration-300"
-                        style={{ 
+                        style={{
                           backgroundColor: COLOR_SCHEMES[colorScheme].cardBg,
-                          borderColor: COLOR_SCHEMES[colorScheme].border 
+                          borderColor: COLOR_SCHEMES[colorScheme].border
                         }}
                       >
-                        <SelectItem 
+                        <SelectItem
                           value="blocks"
                           className="transition-colors duration-300"
                           style={{ color: COLOR_SCHEMES[colorScheme].text }}
                         >
                           Blocks (█ ░)
                         </SelectItem>
-                        <SelectItem 
+                        <SelectItem
                           value="circles"
                           className="transition-colors duration-300"
                           style={{ color: COLOR_SCHEMES[colorScheme].text }}
                         >
                           Circles (● ○)
                         </SelectItem>
-                        <SelectItem 
+                        <SelectItem
                           value="squares"
                           className="transition-colors duration-300"
                           style={{ color: COLOR_SCHEMES[colorScheme].text }}
@@ -1118,7 +983,7 @@ export default function TerminalLife() {
                   </div>
 
                   <div className="border-t pt-4 transition-colors duration-300" style={{ borderColor: COLOR_SCHEMES[colorScheme].border }}>
-                    <h4 
+                    <h4
                       className="mb-3 transition-colors duration-300"
                       style={{ color: COLOR_SCHEMES[colorScheme].text }}
                     >
@@ -1132,10 +997,10 @@ export default function TerminalLife() {
                           onChange={(e) => setImportExportText(e.target.value)}
                           placeholder="Paste pattern data here..."
                           className="w-full h-20 p-2 border-2 rounded text-xs font-mono resize-none transition-colors duration-300"
-                          style={{ 
+                          style={{
                             backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg,
                             borderColor: COLOR_SCHEMES[colorScheme].border,
-                            color: COLOR_SCHEMES[colorScheme].buttonText 
+                            color: COLOR_SCHEMES[colorScheme].buttonText
                           }}
                         />
                       </div>
@@ -1146,10 +1011,10 @@ export default function TerminalLife() {
                           size="sm"
                           className="border-2 transition-colors duration-300 hover:opacity-80 disabled:opacity-50"
                           disabled={!importExportText.trim()}
-                          style={{ 
+                          style={{
                             backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg,
                             borderColor: COLOR_SCHEMES[colorScheme].border,
-                            color: COLOR_SCHEMES[colorScheme].buttonText 
+                            color: COLOR_SCHEMES[colorScheme].buttonText
                           }}
                         >
                           <Upload className="w-4 h-4 mr-1" />
@@ -1160,10 +1025,10 @@ export default function TerminalLife() {
                           variant="outline"
                           size="sm"
                           className="border-2 transition-colors duration-300 hover:opacity-80"
-                          style={{ 
+                          style={{
                             backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg,
                             borderColor: COLOR_SCHEMES[colorScheme].border,
-                            color: COLOR_SCHEMES[colorScheme].buttonText 
+                            color: COLOR_SCHEMES[colorScheme].buttonText
                           }}
                         >
                           <Download className="w-4 h-4 mr-1" />
@@ -1192,15 +1057,15 @@ export default function TerminalLife() {
       {/* Save Dialog Modal */}
       {showSaveDialog && (
         <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-          <Card 
+          <Card
             className="w-96 border-2 transition-colors duration-300"
-            style={{ 
+            style={{
               backgroundColor: COLOR_SCHEMES[colorScheme].cardBg,
-              borderColor: COLOR_SCHEMES[colorScheme].border 
+              borderColor: COLOR_SCHEMES[colorScheme].border
             }}
           >
             <CardHeader>
-              <CardTitle 
+              <CardTitle
                 className="transition-colors duration-300"
                 style={{ color: COLOR_SCHEMES[colorScheme].text }}
               >
@@ -1216,10 +1081,10 @@ export default function TerminalLife() {
                   onChange={(e) => setSavePatternName(e.target.value)}
                   placeholder="Enter pattern name..."
                   className="w-full p-2 border-2 rounded text-sm transition-colors duration-300"
-                  style={{ 
+                  style={{
                     backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg,
                     borderColor: COLOR_SCHEMES[colorScheme].border,
-                    color: COLOR_SCHEMES[colorScheme].buttonText 
+                    color: COLOR_SCHEMES[colorScheme].buttonText
                   }}
                   autoFocus
                   onKeyDown={(e) => {
@@ -1233,10 +1098,10 @@ export default function TerminalLife() {
                   onClick={() => setShowSaveDialog(false)}
                   variant="outline"
                   className="border-2 transition-colors duration-300 hover:opacity-80"
-                  style={{ 
+                  style={{
                     backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg,
                     borderColor: COLOR_SCHEMES[colorScheme].border,
-                    color: COLOR_SCHEMES[colorScheme].buttonText 
+                    color: COLOR_SCHEMES[colorScheme].buttonText
                   }}
                 >
                   Cancel
@@ -1246,10 +1111,10 @@ export default function TerminalLife() {
                   variant="outline"
                   className="border-2 transition-colors duration-300 hover:opacity-80 disabled:opacity-50"
                   disabled={!savePatternName.trim()}
-                  style={{ 
+                  style={{
                     backgroundColor: COLOR_SCHEMES[colorScheme].buttonBg,
                     borderColor: COLOR_SCHEMES[colorScheme].border,
-                    color: COLOR_SCHEMES[colorScheme].buttonText 
+                    color: COLOR_SCHEMES[colorScheme].buttonText
                   }}
                 >
                   Save

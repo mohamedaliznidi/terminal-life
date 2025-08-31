@@ -118,3 +118,30 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Custom scrollbar styling for saved patterns */
+.saved-patterns-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.saved-patterns-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.saved-patterns-scrollbar::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+  border-radius: 4px;
+  border: none;
+  opacity: 0.7;
+}
+
+.saved-patterns-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-foreground);
+  opacity: 0.9;
+}
+
+/* Firefox scrollbar styling */
+.saved-patterns-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
