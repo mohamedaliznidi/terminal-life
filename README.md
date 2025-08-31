@@ -4,7 +4,7 @@ A high-performance implementation of Conway's Game of Life built with React, Typ
 
 ## 🚀 Live Demo
 
-**[Try it live at terminal-life.vercel.app](https://terminal-life.vercel.app)**
+**[Try it live at terminal-life.vercel.app](https://terminal-life-flame.vercel.app)**
 
 ## 📖 About
 
