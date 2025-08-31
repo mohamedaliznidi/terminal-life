@@ -77,7 +77,7 @@ Includes 15+ famous Conway's Game of Life patterns:
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/mohamedaliznidi/terminal-life.git
    cd terminal-life
    ```
 
