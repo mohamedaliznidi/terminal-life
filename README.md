@@ -78,7 +78,7 @@ Includes 15+ famous Conway's Game of Life patterns:
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd game-of-life
+   cd terminal-life
    ```
 
 2. **Install dependencies**
