@@ -4,7 +4,10 @@
   "version": "1.0.0",
   "type": "module",
   "description": "A high-performance implementation of Conway's Game of Life built with React, TypeScript, and Canvas API",
-  "author": "Mohamed Ali Znidi",
+  "author": {
+    "name": "Mohamed Ali Znidi",
+    "url": "https://github.com/mohamedaliznidi"
+  },
   "homepage": "https://terminal-life-flame.vercel.app",
   "repository": {
     "type": "git",
