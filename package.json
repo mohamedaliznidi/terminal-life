@@ -1,8 +1,28 @@
 {
-  "name": "game-of-life",
+  "name": "terminal-life",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
+  "description": "A high-performance implementation of Conway's Game of Life built with React, TypeScript, and Canvas API",
+  "author": "Mohamed Ali Znidi",
+  "homepage": "https://terminal-life-flame.vercel.app",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mohamedaliznidi/terminal-life.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mohamedaliznidi/terminal-life/issues"
+  },
+  "keywords": [
+    "conway",
+    "game-of-life",
+    "cellular-automaton",
+    "react",
+    "typescript",
+    "canvas",
+    "simulation",
+    "patterns"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
